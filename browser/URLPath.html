@@ -13,7 +13,8 @@
       
     /**
      * url地址对象
-     * @description 模仿window.location
+     * 模仿window.location,
+     * 详细测试地址: https://github.com/tm-roamer/practice/blob/master/browser/URLPath.html
      * @param url 被代理的url请求地址
      */
     function URLPath(url) {
@@ -30,7 +31,7 @@
         self.origin = "";                   // 起源 = 协议 + 主机地址
 
         // 常量
-        self.CONST_HEAD = 'head',
+        self.CONST_HEAD = 'head';
         self.CONST_TAIL = 'tail';
 
         // 解析锚点
@@ -52,10 +53,10 @@
 
         // 解析相对路径 ./ 或者 ../ 或者 x/xx
         if (!self.protocol) {
-          self.parser(url, new RegExp(/^[^\/|^\.]|\.\/|\.\.\//, ['i']), self.CONST_HEAD, function (url, index, match, len) {
-              self.pathname = url.substring(len > 1 ? index - len : index);
-          });
-          if (self.pathname !== "/") return;
+            self.parser(url, new RegExp(/^[^\/|^\.]|\.\/|\.\.\//, ['i']), self.CONST_HEAD, function (url, index, match, len) {
+                self.pathname = url.substring(len > 1 ? index - len : index);
+            });
+            if (self.pathname !== "/") return;
         }
 
         // 解析路径 /x/xx
@@ -69,11 +70,11 @@
         });
 
         if (url) {
-          self.hostname = url;
-          self.host = self.hostname + (self.port && ':' + self.port);
-          self.origin = self.protocol + '//' + self.host;  
+            self.hostname = url;
+            self.host = self.hostname + (self.port && ':' + self.port);
+            self.origin = self.protocol + '//' + self.host;
         }
-    };
+    }
 
     /**
      * 解析url
@@ -92,14 +93,14 @@
             return type === this.CONST_HEAD ? url.substring(0, index) : url.substring(index);
         }
         return url;
-    }
+    };
 
     /**
      * 地址合并
      * @param base 解析后的document.baseURL
      * @param path 解析后的xhr请求地址
      */
-    URLPath.merge = function(base, path) {
+    URLPath.merge = function (base, path) {
         // xhr2 绝对路径
         if (path.protocol) {
             return path.href;
@@ -109,30 +110,31 @@
             return base.origin + path.pathname + path.search;
         }
         var basePathName = base.pathname,
-            bool = base.pathname[base.pathname.length - 1] === "/"
+            pathName = path.pathname,
+            bool = base.pathname[base.pathname.length - 1] === "/";
         // 相对路径 ../
         var match = path.pathname.match(/\.\.\//g);
         if (!!match) {
-            // 清理最后字符 / 
-            bool && (basePathName = base.pathname.substring(0, base.pathname.length -1));
+            // 清理最后字符 /
+            bool && (basePathName = base.pathname.substring(0, base.pathname.length - 1));
             // 清理 ../
-            var pathName =  path.pathname.replace(/\.\.\//g, "");
+            pathName = path.pathname.replace(/\.\.\//g, "");
             // 回滚上一层
             var count = match.length;
-            while((count--)>0) {
-                basePathName =  basePathName.substring(0, basePathName.lastIndexOf("/"));
+            while ((count--) > 0) {
+                basePathName = basePathName.substring(0, basePathName.lastIndexOf("/"));
             }
             return base.origin + basePathName + '/' + pathName + path.search;
         }
         // 相对路径 ./ 或者 x/xx
         if (!!path.pathname.match(/^[^\/|^\.]|\.\//i)) {
             // 补充最后字符 /
-            !bool &&  (basePathName = base.pathname + '/');
+            !bool && (basePathName = base.pathname + '/');
             // 清理 ./
-            var pathName =  path.pathname.replace(/\.\//g, "");
+            pathName = path.pathname.replace(/\.\//g, "");
             return base.origin + basePathName + pathName + path.search;
         }
-    }
+    };
 
     // 代码测试
     // -------  URLPath.prototype.merge 测试 ---------
