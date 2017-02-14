@@ -147,6 +147,7 @@
 
     /**
      * 重写xhr的open方法, 代理xhr请求
+     * 详细测试地址: https://github.com/tm-roamer/practice/blob/master/browser/xhrProxy.html
      * @param method 方法
      * @param url 路径
      * @param async 发送异步请求
@@ -223,6 +224,12 @@
     // base.setAttribute("href", "http://www.qq.com/x/y/"); xhr.open('GET', '../a/b/c/xhr?a=aa&b=bb&c=cc');
     // base.setAttribute("href", "http://www.qq.com/x/y/z"); xhr.open('GET', '../a/b/c/xhr');
     // base.setAttribute("href", "http://www.qq.com/x/y/z/"); xhr.open('GET', '../a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/1/2/3/4/5"); xhr.open('GET', '../a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/1/2/3/4/5/"); xhr.open('GET', '../../a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/1/2/3/4/5"); xhr.open('GET', '../../../a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/1/2/3/4/5/"); xhr.open('GET', '../../../../a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/1/2/3/4/5"); xhr.open('GET', '../../../../../a/b/c/xhr');
+
 
     xhr.send();
     </script>
