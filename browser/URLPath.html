@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <!-- <base href="如果这里配置了, 可以通过document.baseURL获取到" > -->
+    <meta charset="utf-8">
+  </head>
+  <body>
+    <script type="text/javascript">
+
+    // xhr  支持 ./ ../ x/xx /x/xx 
+    // xhr2 支持 http https 
+    // 所以需要针对所有可能的情况进行详细测试
+      
+    /**
+     * url地址对象
+     * @description 模仿window.location
+     * @param url 被代理的url请求地址
+     */
+    function URLPath(url) {
+
+        var self = this;
+        self.href = url;                    // 完整url地址
+        self.hash = "";                     // 锚点
+        self.search = "";                   // 查询条件
+        self.pathname = "/";                // 路径, 默认 根路径
+        self.port = "";                     // 端口
+        self.hostname = "";                 // 主机名
+        self.host = "";                     // 主机地址 = 主机名 + 端口
+        self.protocol = "";                 // 协议
+        self.origin = "";                   // 起源 = 协议 + 主机地址
+
+        // 常量
+        self.CONST_HEAD = 'head',
+        self.CONST_TAIL = 'tail';
+
+        // 解析锚点
+        url = self.parser(url, new RegExp('#', ['i']), self.CONST_HEAD, function (url, index, match) {
+            var hash = url.substring(index);
+            hash !== '#' && (self.hash = url.substring(index));
+        });
+
+        // 解析请求参数
+        url = self.parser(url, new RegExp(/\?/, ['i']), self.CONST_HEAD, function (url, index, match) {
+            var search = url.substring(index);
+            search !== '?' && (self.search = url.substring(index));
+        });
+
+        // 解析协议
+        url = self.parser(url, new RegExp(/^http:\/\/|https:\/\//, ['i']), self.CONST_TAIL, function (url, index, match, len) {
+            self.protocol = match.substring(0, len - 2);
+        });
+
+        // 解析相对路径 ./ 或者 ../ 或者 x/xx
+        if (!self.protocol) {
+          self.parser(url, new RegExp(/^[^\/|^\.]|\.\/|\.\.\//, ['i']), self.CONST_HEAD, function (url, index, match, len) {
+              self.pathname = url.substring(len > 1 ? index - len : index);
+          });
+          if (self.pathname !== "/") return;
+        }
+
+        // 解析路径 /x/xx
+        url = self.parser(url, new RegExp(/\//, ['i']), self.CONST_HEAD, function (url, index, match, len) {
+            self.pathname = url.substring(len > 1 ? index - len : index);
+        });
+
+        // 解析端口
+        url = self.parser(url, new RegExp(/\:/, ['i']), self.CONST_HEAD, function (url, index, match) {
+            self.port = url.substring(index + 1);
+        });
+
+        if (url) {
+          self.hostname = url;
+          self.host = self.hostname + (self.port && ':' + self.port);
+          self.origin = self.protocol + '//' + self.host;  
+        }
+    };
+
+    /**
+     * 解析url
+     * @param url 待解析url
+     * @param regexp 待匹配正则表达式
+     * @param type 'head' or 'tail' 返回被截取的url头部还是尾部
+     * @param ck 回调
+     */
+    URLPath.prototype.parser = function (url, regexp, type, ck) {
+        var matchArr = regexp.exec(url);
+        if (matchArr && matchArr.length > 0) {
+            var match = matchArr[0],
+                len = match.length,
+                index = url.indexOf(match) + (len > 1 && len);
+            ck && typeof ck === 'function' && ck(url, index, match, len);
+            return type === this.CONST_HEAD ? url.substring(0, index) : url.substring(index);
+        }
+        return url;
+    }
+
+    /**
+     * 地址合并
+     * @param base 解析后的document.baseURL
+     * @param path 解析后的xhr请求地址
+     */
+    URLPath.merge = function(base, path) {
+        // xhr2 绝对路径
+        if (path.protocol) {
+            return path.href;
+        }
+        // 绝对路径 /x/xx
+        if (path.pathname.match(/^\//)) {
+            return base.origin + path.pathname + path.search;
+        }
+        var basePathName = base.pathname,
+            bool = base.pathname[base.pathname.length - 1] === "/"
+        // 相对路径 ../
+        var match = path.pathname.match(/\.\.\//g);
+        if (!!match) {
+            // 清理最后字符 / 
+            bool && (basePathName = base.pathname.substring(0, base.pathname.length -1));
+            // 清理 ../
+            var pathName =  path.pathname.replace(/\.\.\//g, "");
+            // 回滚上一层
+            var count = match.length;
+            while((count--)>0) {
+                basePathName =  basePathName.substring(0, basePathName.lastIndexOf("/"));
+            }
+            return base.origin + basePathName + '/' + pathName + path.search;
+        }
+        // 相对路径 ./ 或者 x/xx
+        if (!!path.pathname.match(/^[^\/|^\.]|\.\//i)) {
+            // 补充最后字符 /
+            !bool &&  (basePathName = base.pathname + '/');
+            // 清理 ./
+            var pathName =  path.pathname.replace(/\.\//g, "");
+            return base.origin + basePathName + pathName + path.search;
+        }
+    }
+
+    // 代码测试
+    // -------  URLPath.prototype.merge 测试 ---------
+    // (1) http | https 情况
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('https://www.dubai.com/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('http://www.dubai.com')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('http://www.dubai.com/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com:8888')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('https://www.dubai.com:8888/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://127.0.0.1:8888')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('https://127.0.0.1:8888/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://localhost')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('https://localhost/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://localhost:8888')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('https://localhost:8888/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('http://www.dubai.com?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com:8080?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('http://www.dubai.com:8080?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com/a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('http://www.dubai.com/a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com/a/b/c/d.json?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('http://www.dubai.com/a/b/c/d.json?a=aa&b=bb&c=cc')));
+    // (2) 绝对路径 /x/xx
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('/a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com'), new URLPath('/a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('/a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/'), new URLPath('/a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z'), new URLPath('/a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('/a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z'), new URLPath('/a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('/a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('/a/b/c/d.json')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com'), new URLPath('/a/b/c/d.css')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('/a/b/c/d.html')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/'), new URLPath('/a/b/c/d.js')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z'), new URLPath('/a/b/c/d.json')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('/a/b/c/d.css')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z'), new URLPath('/a/b/c/d.html')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('/a/b/c/d.js')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('/a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com'), new URLPath('/a/b/c/d.json?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('/a/b/c/d.json?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/'), new URLPath('/a/b/c/d.json?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z'), new URLPath('/a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('/a/b/c/d.json?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z'), new URLPath('/a/b/c/d.json?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('/a/b/c/d.json?a=aa&b=bb&c=cc')));
+    // (3) 相对路径 ./
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com'), new URLPath('./a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/'), new URLPath('./a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y'), new URLPath('./a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/'), new URLPath('./a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('./a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://localhost'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/z'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/z/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/y'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/y/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/y/z'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/y/z/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z/'), new URLPath('./a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080'), new URLPath('./a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x'), new URLPath('./a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/'), new URLPath('./a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y'), new URLPath('./a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/'), new URLPath('./a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z'), new URLPath('./a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z/'), new URLPath('./a/b/c/d?a=aa&b=bb&c=cc')));
+    // (4) 相对路径 x/xx
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com'), new URLPath('a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/'), new URLPath('a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y'), new URLPath('a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/'), new URLPath('a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://localhost'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/z'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/z/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/y'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/y/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/y/z'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://localhost:8080/x/y/z/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z/'), new URLPath('a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080'), new URLPath('a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/'), new URLPath('a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x'), new URLPath('a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/'), new URLPath('a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y'), new URLPath('a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/'), new URLPath('a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z'), new URLPath('a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z/'), new URLPath('a/b/c/d?a=aa&b=bb&c=cc')));
+    // (5) 相对路径 ../
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/'), new URLPath('../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/'), new URLPath('../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/'), new URLPath('../../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/'), new URLPath('../../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/q'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/x/y/z/q/'), new URLPath('../../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3'), new URLPath('../../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/'), new URLPath('../../../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/4'), new URLPath('../../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/4/'), new URLPath('../../../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/4/5'), new URLPath('../../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/4/5/'), new URLPath('../../../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/'), new URLPath('../../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/4'), new URLPath('../../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/4/'), new URLPath('../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/4/5'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://www.baidu.com/1/2/3/4/5/'), new URLPath('../../../a/b/c/d/')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/y'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/y/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/y/z'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/y/z/'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/z'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/z/'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/y'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/y/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/y/z'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/y/z/'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/y'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/y/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/y/z'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/y/z/'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z/'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/'), new URLPath('../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z/'), new URLPath('../../a/b/c/d')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/y'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/y/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/y/z'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1/x/y/z/'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/z'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://127.0.0.1:8080/x/y/z/'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/y'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/y/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/y/z'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost/x/y/z/'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/y'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/y/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/y/z'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('http://localhost:8080/x/y/z/'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com/x/y/z/'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/'), new URLPath('../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com:8080/x/y/z/'), new URLPath('../../a/b/c/d?a=aa&b=bb&c=cc')));
+
+    // -------  解析url测试 ---------
+    
+    // (1) http | https 情况
+    // console.log(new URLPath('https://www.baidu.com'));
+    // console.log(new URLPath('https://www.baidu.com/'));
+    // console.log(new URLPath('http://www.baidu.com'));
+    // console.log(new URLPath('http://www.baidu.com/'));
+    // (2) port 情况
+    // console.log(new URLPath('https://www.baidu.com:8080'));
+    // console.log(new URLPath('https://www.baidu.com:8080/'));
+    // console.log(new URLPath('http://www.baidu.com:8080'));
+    // console.log(new URLPath('http://www.baidu.com:8080/'));
+    // (3) ip 情况
+    // console.log(new URLPath('http://localhost'));
+    // console.log(new URLPath('https://localhost/'));
+    // console.log(new URLPath('http://127.0.0.1'));
+    // console.log(new URLPath('https://127.0.0.1/'));
+    // console.log(new URLPath('http://127.0.0.1:8080'));
+    // console.log(new URLPath('https://127.0.0.1:8080/'));
+    // (4) path 情况
+    // console.log(new URLPath('http://www.baidu.com/a/b/c'));
+    // console.log(new URLPath('https://www.baidu.com/a/b/c/'));
+    // console.log(new URLPath('http://www.baidu.com:8080/a/b/c'));
+    // console.log(new URLPath('https://www.baidu.com:8080/a/b/c/'));
+    // console.log(new URLPath('http://127.0.0.1/a/b/c'));
+    // console.log(new URLPath('https://127.0.0.1/a/b/c/'));
+    // console.log(new URLPath('http://127.0.0.1:8080/a/b/c'));
+    // console.log(new URLPath('https://127.0.0.1:8080/a/b/c/'));
+    // (5) path / 开头的情况
+    // console.log(new URLPath('/a/b/c'));
+    // console.log(new URLPath('/a/b/c/'));
+    // console.log(new URLPath('/a/b/c/d.json'));
+    // console.log(new URLPath('/a/b/c/d.css'));
+    // console.log(new URLPath('/a/b/c/d.png'));
+    // (6) path ./ 开头的情况
+    // console.log(new URLPath('./a/b/c'));
+    // console.log(new URLPath('./a/b/c/'));
+    // console.log(new URLPath('./a/b/c/d.json'));
+    // console.log(new URLPath('./a/b/c/d.css'));
+    // console.log(new URLPath('./a/b/c/d.png'));
+    // (7) path ../ 开头的情况
+    // console.log(new URLPath('../a/b/c'));
+    // console.log(new URLPath('../a/b/c/'));
+    // console.log(new URLPath('../a/b/c/d.json'));
+    // console.log(new URLPath('../../a/b/c/d.css'));
+    // console.log(new URLPath('../../../a/b/c/d.png'));
+    // (8) path a/ 开头的情况
+    // console.log(new URLPath('a/b/c'));
+    // console.log(new URLPath('aa/b/c/'));
+    // console.log(new URLPath('aaa/b/c/d.json'));
+    // console.log(new URLPath('aaaa/b/c/d.css'));
+    // console.log(new URLPath('aaaaa/b/c/d.png'));
+    // (9) ? 的情况
+    // console.log(new URLPath('a/b/c?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('./a/b/c/?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('../a/b/c?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('../../a/b/c/d.css?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('/a/b/c/d.json?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('http://www.baidu.com?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('http://www.baidu.com/?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('http://www.baidu.com/a/b/c/d.json?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('https://www.baidu.com/a/b/c/d?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('https://www.baidu.com:8080/a/b/c/d.json?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('http://127.0.0.1:8080/a/b/c/d?a=aa&b=bb&c=cc'));
+    // console.log(new URLPath('http://localhost:8080/a/b/c/d.json?a=aa&b=bb&c=cc'));
+    // (10) # 的情况
+    // console.log(new URLPath('/a/b/c/d#xyz'));
+    // console.log(new URLPath('/a/b/c/d/#xyz'));
+    // console.log(new URLPath('/a/b/c/d.json#xyz'));
+    // console.log(new URLPath('/a/b/c/d.json#/x/y/z/'));
+    // console.log(new URLPath('a/b/c/d.json#/x/y/z/'));
+    // console.log(new URLPath('/a/b/c/d.json#/x/y/z/'));
+    // console.log(new URLPath('./a/b/c/d.json#/x/y/z/'));
+    // console.log(new URLPath('../a/b/c/d.json#/x/y/z/'));
+    // console.log(new URLPath('../../a/b/c/d.json#/x/y/z/'));
+    // console.log(new URLPath('a/b/c?a=aa&b=bb&c=cc#/x/y/z'));
+    // console.log(new URLPath('/a/b/c/d.json?a=aa&b=bb&c=cc#/x/y/z'));
+    // console.log(new URLPath('./a/b/c/?a=aa&b=bb&c=cc#/x/y/z'));
+    // console.log(new URLPath('../a/b/c?a=aa&b=bb&c=cc#/x/y/z'));
+    // console.log(new URLPath('../../a/b/c/d.css?a=aa&b=bb&c=cc#/x/y/z'));
+    // console.log(new URLPath('http://www.baidu.com#/x/y/z/'));
+    // console.log(new URLPath('http://www.baidu.com/#/x/y/z/'));
+    // console.log(new URLPath('http://www.baidu.com/a/b/c/d.json#/x/y/z/'));
+    // console.log(new URLPath('https://www.baidu.com:8080/a/b/c/d#/x/y/z/'));
+    // console.log(new URLPath('http://www.baidu.com/a/b/c/d.json?a=aa&b=bb&c=cc#/x/y/z/'));
+    // console.log(new URLPath('https://www.baidu.com/a/b/c/d?a=aa&b=bb&c=cc#/x/y/z/'));
+    // console.log(new URLPath('https://www.baidu.com:8080/a/b/c/d.json?a=aa&b=bb&c=cc#/x/y/z/'));
+    // console.log(new URLPath('http://127.0.0.1:8080/a/b/c/d?a=aa&b=bb&c=cc#/x/y/z/'));
+    // console.log(new URLPath('http://localhost:8080/a/b/c/d.json?a=aa&b=bb&c=cc#/x/y/z/'));
+    </script>
+  </body>
+</html>
