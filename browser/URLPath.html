@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
-    <!-- <base href="如果这里配置了, 可以通过document.baseURL获取到" > -->
+    <!-- <base href="如果这里配置了, 可以通过document.baseURI获取到" > -->
     <meta charset="utf-8">
   </head>
   <body>
@@ -97,12 +97,12 @@
 
     /**
      * 地址合并
-     * @param base 解析后的document.baseURL
+     * @param base 解析后的document.baseURI
      * @param path 解析后的xhr请求地址
      */
     URLPath.merge = function (base, path) {
-        // xhr2 绝对路径
-        if (path.protocol) {
+        // xhr2 绝对路径, 并判断是否跨域
+        if (path.protocol && base.origin !== path.origin) {
             return path.href;
         }
         // 绝对路径 /x/xx
@@ -138,6 +138,11 @@
 
     // 代码测试
     // -------  URLPath.prototype.merge 测试 ---------
+    // (0) 跨域情况
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.baidu.com')));
+    // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.baidu.com')));
     // (1) http | https 情况
     // console.log(URLPath.merge(new URLPath('https://www.baidu.com'), new URLPath('https://www.dubai.com')));
     // console.log(URLPath.merge(new URLPath('https://www.baidu.com/'), new URLPath('https://www.dubai.com/')));

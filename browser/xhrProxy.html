@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <!-- <base href="如果这里配置了, 可以通过document.baseURI获取到" > -->
+    <meta charset="utf-8">
+  </head>
+  <body>
+    <script type="text/javascript">
+
+    /**
+     * url地址对象
+     * 模仿window.location,
+     * 详细测试地址: https://github.com/tm-roamer/practice/blob/master/browser/URLPath.html
+     * @param url 被代理的url请求地址
+     */
+    function URLPath(url) {
+
+        var self = this;
+        self.href = url;                    // 完整url地址
+        self.hash = "";                     // 锚点
+        self.search = "";                   // 查询条件
+        self.pathname = "/";                // 路径, 默认 根路径
+        self.port = "";                     // 端口
+        self.hostname = "";                 // 主机名
+        self.host = "";                     // 主机地址 = 主机名 + 端口
+        self.protocol = "";                 // 协议
+        self.origin = "";                   // 起源 = 协议 + 主机地址
+
+        // 常量
+        self.CONST_HEAD = 'head';
+        self.CONST_TAIL = 'tail';
+
+        // 解析锚点
+        url = self.parser(url, new RegExp('#', ['i']), self.CONST_HEAD, function (url, index, match) {
+            var hash = url.substring(index);
+            hash !== '#' && (self.hash = url.substring(index));
+        });
+
+        // 解析请求参数
+        url = self.parser(url, new RegExp(/\?/, ['i']), self.CONST_HEAD, function (url, index, match) {
+            var search = url.substring(index);
+            search !== '?' && (self.search = url.substring(index));
+        });
+
+        // 解析协议
+        url = self.parser(url, new RegExp(/^http:\/\/|https:\/\//, ['i']), self.CONST_TAIL, function (url, index, match, len) {
+            self.protocol = match.substring(0, len - 2);
+        });
+
+        // 解析相对路径 ./ 或者 ../ 或者 x/xx
+        if (!self.protocol) {
+            self.parser(url, new RegExp(/^[^\/|^\.]|\.\/|\.\.\//, ['i']), self.CONST_HEAD, function (url, index, match, len) {
+                self.pathname = url.substring(len > 1 ? index - len : index);
+            });
+            if (self.pathname !== "/") return;
+        }
+
+        // 解析路径 /x/xx
+        url = self.parser(url, new RegExp(/\//, ['i']), self.CONST_HEAD, function (url, index, match, len) {
+            self.pathname = url.substring(len > 1 ? index - len : index);
+        });
+
+        // 解析端口
+        url = self.parser(url, new RegExp(/\:/, ['i']), self.CONST_HEAD, function (url, index, match) {
+            self.port = url.substring(index + 1);
+        });
+
+        if (url) {
+            self.hostname = url;
+            self.host = self.hostname + (self.port && ':' + self.port);
+            self.origin = self.protocol + '//' + self.host;
+        }
+    }
+
+    /**
+     * 解析url
+     * @param url 待解析url
+     * @param regexp 待匹配正则表达式
+     * @param type 'head' or 'tail' 返回被截取的url头部还是尾部
+     * @param ck 回调
+     */
+    URLPath.prototype.parser = function (url, regexp, type, ck) {
+        var matchArr = regexp.exec(url);
+        if (matchArr && matchArr.length > 0) {
+            var match = matchArr[0],
+                len = match.length,
+                index = url.indexOf(match) + (len > 1 && len);
+            ck && typeof ck === 'function' && ck(url, index, match, len);
+            return type === this.CONST_HEAD ? url.substring(0, index) : url.substring(index);
+        }
+        return url;
+    };
+
+    /**
+     * 地址合并
+     * @param base 解析后的document.baseURI
+     * @param path 解析后的xhr请求地址
+     */
+    URLPath.merge = function (base, path) {
+        // xhr2 绝对路径, 并判断是否跨域
+        if (path.protocol && base.origin !== path.origin) {
+            return path.href;
+        }
+        // 绝对路径 /x/xx
+        if (path.pathname.match(/^\//)) {
+            return base.origin + path.pathname + path.search;
+        }
+        var basePathName = base.pathname,
+            pathName = path.pathname,
+            bool = base.pathname[base.pathname.length - 1] === "/";
+        // 相对路径 ../
+        var match = path.pathname.match(/\.\.\//g);
+        if (!!match) {
+            // 清理最后字符 /
+            bool && (basePathName = base.pathname.substring(0, base.pathname.length - 1));
+            // 清理 ../
+            pathName = path.pathname.replace(/\.\.\//g, "");
+            // 回滚上一层
+            var count = match.length;
+            while ((count--) > 0) {
+                basePathName = basePathName.substring(0, basePathName.lastIndexOf("/"));
+            }
+            return base.origin + basePathName + '/' + pathName + path.search;
+        }
+        // 相对路径 ./ 或者 x/xx
+        if (!!path.pathname.match(/^[^\/|^\.]|\.\//i)) {
+            // 补充最后字符 /
+            !bool && (basePathName = base.pathname + '/');
+            // 清理 ./
+            pathName = path.pathname.replace(/\.\//g, "");
+            return base.origin + basePathName + pathName + path.search;
+        }
+    };
+
+    /**
+     * 装饰器模式
+     * @param fn 被装饰的函数
+     * @param beforefn 装饰函数
+     */
+    var before = function (fn, beforefn) {
+        return function () {
+            // 替换url地址, 进行代理
+            arguments[1] = beforefn.apply(this, arguments);
+            return fn.apply(this, arguments);
+        }
+    };
+
+    /**
+     * 重写xhr的open方法, 代理xhr请求
+     * @param method 方法
+     * @param url 路径
+     * @param async 发送异步请求
+     */
+    XMLHttpRequest.prototype.open = before(XMLHttpRequest.prototype.open, function (method, url, async) {
+        
+        if (!url) return url;
+
+        // 防止多次绑定, 请求反复进入, 多次绑定pt-heatmap-proxy-url
+        if (url.match(/pt-heatmap-proxy-url/) !== null) return url;
+        
+        // 拆解url
+        var requestURL = new URLPath(url);
+        var baseURL = new URLPath(document.baseURI);
+
+        // xhr2 请求地址 以 http https 开头, 且跨域, 不处理
+        if (requestURL.protocol.match(/^http:|https:/) && requestURL.origin !== baseURL.origin) {
+            console.log(requestURL.href);
+            return requestURL.href;
+        }
+
+        // 合并url
+        var mergeURL = URLPath.merge(baseURL, requestURL);
+        
+        // 补全origin, 不然会被 baseURI 覆盖替换
+        console.log(location.origin + '/pagetmp/proxy?pt-heatmap-proxy-url=' + mergeURL);
+        return location.origin + '/pagetmp/proxy?pt-heatmap-proxy-url=' + encodeURIComponent(mergeURL);
+    });
+
+    var xhr = new XMLHttpRequest();
+        base = document.createElement("base");
+    document.head.insertBefore(base, document.head.children[0]);
+    // (1) http https 情况
+    // base.setAttribute("href", "http://www.baidu.com"); xhr.open('GET', 'http://localhost:8000/xhr.js?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.baidu.com/"); xhr.open('GET', 'http://localhost:8000/xhr.js?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://localhost:8000"); xhr.open('GET', 'http://localhost:8000/xhr.js?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://localhost:8000/"); xhr.open('GET', 'http://localhost:8000/xhr.js?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('POST', '/a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com"); xhr.open('GET', '/a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('PUT', '/a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com"); xhr.open('DELETE', '/a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('HEAD', '/a/b/c/xhr');
+    // (2) 路径 / 情况
+    // base.setAttribute("href", "http://www.qq.com"); xhr.open('GET', '/a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com"); xhr.open('GET', '/a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('GET', '/a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('GET', '/a/b/c/xhr?a=aa&b=bb&c=cc');
+    // (3) 路径 ./ 情况
+    // base.setAttribute("href", "http://www.qq.com"); xhr.open('GET', './a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com"); xhr.open('GET', './a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('GET', './a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('GET', './a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/x"); xhr.open('GET', './a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/"); xhr.open('GET', './a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/x/y"); xhr.open('GET', './a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/y/"); xhr.open('GET', './a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/x/y/z"); xhr.open('GET', './a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/y/z/"); xhr.open('GET', './a/b/c/xhr?a=aa&b=bb&c=cc');
+    // (3) 路径 x/xx 情况
+    // base.setAttribute("href", "http://www.qq.com"); xhr.open('GET', 'a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com"); xhr.open('GET', 'a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('GET', 'a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/"); xhr.open('GET', 'a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/x"); xhr.open('GET', 'a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/"); xhr.open('GET', 'a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/x/y"); xhr.open('GET', 'a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/y/"); xhr.open('GET', 'a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/x/y/z"); xhr.open('GET', 'a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/y/z/"); xhr.open('GET', 'a/b/c/xhr?a=aa&b=bb&c=cc');
+    // (4) 路径 ../ 情况
+    // base.setAttribute("href", "http://www.qq.com/x"); xhr.open('GET', '../a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/"); xhr.open('GET', '../a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/x/y"); xhr.open('GET', '../a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/y/"); xhr.open('GET', '../a/b/c/xhr?a=aa&b=bb&c=cc');
+    // base.setAttribute("href", "http://www.qq.com/x/y/z"); xhr.open('GET', '../a/b/c/xhr');
+    // base.setAttribute("href", "http://www.qq.com/x/y/z/"); xhr.open('GET', '../a/b/c/xhr?a=aa&b=bb&c=cc');
+
+    xhr.send();
+    </script>
+  </body>
+</html>
