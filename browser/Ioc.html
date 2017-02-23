@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title></title>
+</head>
+<body>
+
+<script type="text/javascript">
+
+    /**
+     * 练习控制转发IoC
+     */
+
+    /**
+     * 价格表
+     */
+    var price = {
+        egg: 5,
+        beer: 10
+    };
+
+    // 工商局备案
+    var bak = {};
+
+    /**
+     * 工商局登记
+     */
+    function setupShop(name, business) {
+        bak[name] = {};
+        return function() {
+            business.apply(bak[name], arguments);
+        }
+    }
+
+    /**
+     * 新店开业
+     */
+    var storeA = setupShop('A+便利店', function (commodity, deal) {
+        // 没有收银员就招1个
+        this.cashier || (this.cashier = {});
+        // 上班
+        this.cashier[commodity] = deal;
+    });
+
+    /**
+     * 注册商品 鸡蛋
+     */
+    storeA('egg', function (money, respond) {
+        var err, unit = price['egg'];
+        if (money < unit) {
+            err = new Error('钱太少了不够买鸡蛋');
+        }
+        respond(err, {change: money - unit});
+    });
+
+    /**
+     * 初始购买行为
+     */
+    function buy(store, commodity, money, done) {
+        bak[store].cashier[commodity](money, done);
+    }
+
+    /**
+     * 老子要买鸡蛋,补补脑子
+     */
+    buy('A+便利店', 'egg', 1000, function (err, response) {
+        if (err) return console.log(err);
+        console.log('交易完成, 零钱='+response.change);
+    });
+
+
+</script>
+</body>
+</html>
