@@ -5,49 +5,57 @@
     <title></title>
 </head>
 <body>
-    <div id="origin"></div>
-    <div id="sorted"></div>
-    <script>
+<div id="origin"></div>
+<div id="sorted"></div>
+<script>
 
-        /**
-         * 快速排序练习
-         */
+    /**
+     * 快速排序练习
+     */
 
-        var origin = [7,8,5,3,9,2];
-        var sorted = origin.slice();
+    var origin = [7, 8, 14, 9, 12, 31];
+    var sorted = origin.slice();
 
-        function quickSort(arr, start, end) {
-            if(start > end) return;
-            var temp, i = start, j = end,
-                // 设基准值
-                pivot = arr[start];
-            while(i != j) {
-                // 从尾部推到中间
-                while( i < j && arr[j] >= pivot) {
-                    j--;
-                }
-                // 从头部推到中间
-                while( i < j && arr[i] <= pivot) {
-                    i++;
-                }
-                // 交换数据
-                if (i < j) {
-                    temp = arr[i];
-                    arr[i] = arr[j];
-                    arr[j] = temp;
-                }
-                console.log(arr);
+    function quickSort(arr, start, end) {
+        if (start > end) return;
+        var temp,
+            i = start,
+            j = end;
+        // 设基准值
+        var pivot = arr[start];
+        while (i != j) {
+            // 从尾部推到头部
+            while (i < j && arr[j] >= pivot) {
+                j--;
+            }
+            // 从头部推到尾部
+            while (i < j && arr[i] <= pivot) {
+                i++;
+            }
+            // 交换数据
+            if (i < j) {
+                temp = arr[i];
+                arr[i] = arr[j];
+                arr[j] = temp;
             }
         }
+        temp = arr[i];
+        arr[i] = arr[start];
+        arr[start] = temp;
+        quickSort(arr, start, i - 1);
+        quickSort(arr, i + 1, end);
+    }
 
-        console.log(origin);
-        quickSort(sorted, 1, sorted.length - 1);
+    console.log(origin);
+    quickSort(sorted, 0, sorted.length - 1);
+    console.log(sorted);
 
-//        var originDom = document.getElementById("origin");
-//        var sortedDom = document.getElementById("sorted");
-//
-//        originDom.innerHTML = origin;
+    var originDom = document.getElementById("origin");
+    var sortedDom = document.getElementById("sorted");
 
-    </script>
+    originDom.innerHTML = origin;
+    sortedDom.innerHTML = sorted;
+
+</script>
 </body>
 </html>
